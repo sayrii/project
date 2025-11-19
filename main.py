@@ -1,5 +1,4 @@
 import csv
-import shutil
 import sqlite3
 import sys
 from dataclasses import dataclass
