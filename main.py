@@ -1,22 +1,23 @@
-import sys
-import sqlite3
 import csv
+import shutil
+import sqlite3
+import sys
 from dataclasses import dataclass
 from datetime import datetime
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt, QAbstractTableModel
-from PyQt6.QtGui import QFont, QPixmap, QAction
-from PyQt6.QtWidgets import (QMainWindow, QDialog, QMessageBox,
-                             QFileDialog, QCheckBox, QWidget,
-                             QVBoxLayout, QHBoxLayout, QLabel,
-                             QTableView, QGroupBox, QScrollArea,
-                             QPushButton, QMenu, QMenuBar, QStatusBar,
-                             QInputDialog, QGridLayout)
+from PyQt6.QtGui import QAction, QFont, QPixmap
+from PyQt6.QtWidgets import (
+    QCheckBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMessageBox, QMenu, QMenuBar,
+    QPushButton, QScrollArea, QStatusBar, QTableView, QVBoxLayout, QWidget
+)
 
 
 @dataclass
 class Dish:
-    """класс для представления блюда"""
     id: int
     name: str
     price: float
@@ -25,44 +26,35 @@ class Dish:
 
 
 class DatabaseManager:
-    """менеджер базы данных"""
-
     def __init__(self, db_name="dishes.db"):
         self.db_name = db_name
         self.init_database()
 
     def init_database(self):
-        """инициализация бд"""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS dishes (
+        tables = [
+            '''CREATE TABLE IF NOT EXISTS dishes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 price REAL NOT NULL,
-                image_path TEXT NOT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS orders (
+                image_path TEXT NOT NULL)''',
+            '''CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 total_amount REAL NOT NULL,
-                order_date TEXT NOT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS order_details (
+                order_date TEXT NOT NULL)''',
+            '''CREATE TABLE IF NOT EXISTS order_details (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 order_id INTEGER,
                 dish_id INTEGER,
                 quantity INTEGER,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
-                FOREIGN KEY (dish_id) REFERENCES dishes (id)
-            )
-        ''')
+                FOREIGN KEY (dish_id) REFERENCES dishes (id))'''
+        ]
+
+        for table in tables:
+            cursor.execute(table)
 
         cursor.execute("SELECT COUNT(*) FROM dishes")
         if cursor.fetchone()[0] == 0:
@@ -84,7 +76,6 @@ class DatabaseManager:
         conn.close()
 
     def get_all_dishes(self):
-        """получение всех блюд"""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
         cursor.execute("SELECT id, name, price, image_path FROM dishes")
@@ -93,7 +84,6 @@ class DatabaseManager:
         return dishes
 
     def save_order(self, selected_dishes, total_amount):
-        """сохранение заказа"""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
         order_date = datetime.now().isoformat()
@@ -106,7 +96,8 @@ class DatabaseManager:
 
         for dish in selected_dishes:
             cursor.execute(
-                "INSERT INTO order_details (order_id, dish_id, quantity) VALUES (?, ?, ?)",
+                "INSERT INTO order_details (order_id, dish_id, quantity) "
+                "VALUES (?, ?, ?)",
                 (order_id, dish.id, 1)
             )
 
@@ -115,11 +106,10 @@ class DatabaseManager:
         return order_id
 
     def get_order_history(self):
-        """получение истории заказов"""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT o.id, o.total_amount, o.order_date, 
+            SELECT o.id, o.total_amount, o.order_date,
                    GROUP_CONCAT(d.name, ', ') as dish_names
             FROM orders o
             LEFT JOIN order_details od ON o.id = od.order_id
@@ -131,10 +121,27 @@ class DatabaseManager:
         conn.close()
         return orders
 
+    def add_new_dish(self, name, price, image_path):
+        conn = sqlite3.connect(self.db_name)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO dishes (name, price, image_path) VALUES (?, ?, ?)",
+            (name, price, image_path)
+        )
+        dish_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return dish_id
+
+    def delete_dish(self, dish_id):
+        conn = sqlite3.connect(self.db_name)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM dishes WHERE id = ?", (dish_id,))
+        conn.commit()
+        conn.close()
+
 
 class OrdersTableModel(QAbstractTableModel):
-    """модель таблицы заказов"""
-
     def __init__(self, orders):
         super().__init__()
         self.orders = orders
@@ -155,15 +162,13 @@ class OrdersTableModel(QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        if (role == Qt.ItemDataRole.DisplayRole and
-                orientation == Qt.Orientation.Horizontal):
+        if (role == Qt.ItemDataRole.DisplayRole
+                and orientation == Qt.Orientation.Horizontal):
             return self.headers[section]
         return None
 
 
 class DishWidget(QWidget):
-    """виджет отображения блюда"""
-
     def __init__(self, dish, on_selection_change):
         super().__init__()
         self.dish = dish
@@ -171,7 +176,6 @@ class DishWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        """инициализация UI"""
         layout = QHBoxLayout()
         layout.setSpacing(10)
 
@@ -204,30 +208,217 @@ class DishWidget(QWidget):
         """)
 
     def load_image(self, layout):
-        """загрузка изображения"""
         try:
             pixmap = QPixmap(self.dish.image_path)
             if pixmap.isNull():
                 raise Exception("Image not found")
 
             image_label = QLabel()
-            image_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio))
+            image_label.setPixmap(pixmap.scaled(
+                80, 80, Qt.AspectRatioMode.KeepAspectRatio
+            ))
             layout.addWidget(image_label)
         except Exception:
-            error_label = QLabel("Нет\nизобр.")
+            error_label = QLabel("Нет изображения")
             error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             error_label.setStyleSheet("color: #999;")
             layout.addWidget(error_label)
 
     def on_checkbox_changed(self, state):
-        """обработчик чекбокса"""
         self.dish.selected = (state == Qt.CheckState.Checked.value)
         self.on_selection_change()
 
 
-class OrderHistoryDialog(QDialog):
-    """диалог истории заказов"""
+class AddDishDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_image_path = ""
+        self.init_ui()
+        self.setup_connections()
 
+    def init_ui(self):
+        self.setWindowTitle("Добавить новое блюдо")
+        self.resize(500, 300)
+
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Введите название блюда")
+        form_layout.addRow("Название:", self.name_input)
+
+        self.price_input = QDoubleSpinBox()
+        self.price_input.setRange(0.01, 1000.0)
+        self.price_input.setDecimals(2)
+        self.price_input.setSuffix(" ₽")
+        self.price_input.setValue(10.0)
+        form_layout.addRow("Цена:", self.price_input)
+
+        image_layout = QHBoxLayout()
+        self.image_input = QLineEdit()
+        self.image_input.setPlaceholderText("Выберите изображение...")
+        self.image_input.setReadOnly(True)
+        image_layout.addWidget(self.image_input)
+
+        self.select_image_btn = QPushButton("Выбрать")
+        image_layout.addWidget(self.select_image_btn)
+        form_layout.addRow("Изображение:", image_layout)
+
+        self.image_preview = QLabel()
+        self.image_preview.setFixedSize(100, 100)
+        self.image_preview.setStyleSheet(
+            "border: 2px dashed #ccc; background-color: #f9f9f9;"
+        )
+        self.image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_preview.setText("Превью изображения")
+        form_layout.addRow("Превью:", self.image_preview)
+
+        layout.addLayout(form_layout)
+
+        buttons_layout = QHBoxLayout()
+        self.cancel_btn = QPushButton("Отмена")
+        buttons_layout.addWidget(self.cancel_btn)
+        buttons_layout.addStretch()
+
+        self.add_btn = QPushButton("Добавить блюдо")
+        self.add_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2ecc71;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #27ae60;
+            }
+        """)
+        buttons_layout.addWidget(self.add_btn)
+        layout.addLayout(buttons_layout)
+
+    def setup_connections(self):
+        self.cancel_btn.clicked.connect(self.reject)
+        self.add_btn.clicked.connect(self.accept)
+        self.select_image_btn.clicked.connect(self.select_image)
+
+    def select_image(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Выберите изображение блюда", "",
+            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*.*)"
+        )
+
+        if filename:
+            self.selected_image_path = filename
+            self.image_input.setText(filename)
+            pixmap = QPixmap(filename)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(
+                    96, 96, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self.image_preview.setPixmap(scaled_pixmap)
+            else:
+                self.image_preview.setText("Ошибка загрузки")
+
+    def get_dish_data(self):
+        image_path = self.copy_image_to_folder()
+        return {
+            'name': self.name_input.text().strip(),
+            'price': self.price_input.value(),
+            'image_path': image_path
+        }
+
+    def copy_image_to_folder(self):
+        if not self.selected_image_path:
+            return "images/default.jpg"
+
+        try:
+            import os
+            if not os.path.exists("images"):
+                os.makedirs("images")
+
+            name = self.name_input.text().strip() or "new_dish"
+            safe_name = "".join(c if c.isalnum() else "_" for c in name)
+
+            import os.path
+            extension = os.path.splitext(self.selected_image_path)[1] or ".jpg"
+            new_filename = f"images/{safe_name}{extension}"
+
+            shutil.copy2(self.selected_image_path, new_filename)
+            return new_filename
+
+        except Exception as e:
+            print(f"Ошибка копирования изображения: {e}")
+            return "images/default.jpg"
+
+
+class DeleteDishDialog(QDialog):
+    def __init__(self, dishes, parent=None):
+        super().__init__(parent)
+        self.dishes = dishes
+        self.selected_dish_id = None
+        self.init_ui()
+        self.setup_connections()
+
+    def init_ui(self):
+        self.setWindowTitle("Удалить блюдо")
+        self.resize(400, 300)
+
+        layout = QVBoxLayout(self)
+        title_label = QLabel("Выберите блюдо для удаления:")
+        title_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        layout.addWidget(title_label)
+
+        self.dishes_list = QListWidget()
+        for dish in self.dishes:
+            item_text = f"{dish.name} - {dish.price:.2f} ₽"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, dish.id)
+            self.dishes_list.addItem(item)
+        layout.addWidget(self.dishes_list)
+
+        buttons_layout = QHBoxLayout()
+        self.cancel_btn = QPushButton("Отмена")
+        buttons_layout.addWidget(self.cancel_btn)
+        buttons_layout.addStretch()
+
+        self.delete_btn = QPushButton("Удалить выбранное")
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+            }
+        """)
+        self.delete_btn.setEnabled(False)
+        buttons_layout.addWidget(self.delete_btn)
+        layout.addLayout(buttons_layout)
+
+    def setup_connections(self):
+        self.cancel_btn.clicked.connect(self.reject)
+        self.delete_btn.clicked.connect(self.accept)
+        self.dishes_list.itemSelectionChanged.connect(self.on_selection_changed)
+
+    def on_selection_changed(self):
+        has_selection = len(self.dishes_list.selectedItems()) > 0
+        self.delete_btn.setEnabled(has_selection)
+        if has_selection:
+            selected_item = self.dishes_list.selectedItems()[0]
+            self.selected_dish_id = selected_item.data(Qt.ItemDataRole.UserRole)
+
+    def get_selected_dish_id(self):
+        return self.selected_dish_id
+
+
+class OrderHistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.db_manager = DatabaseManager()
@@ -236,41 +427,32 @@ class OrderHistoryDialog(QDialog):
         self.load_orders()
 
     def init_ui(self):
-        """инициализация UI"""
         self.setWindowTitle("История заказов")
         self.resize(700, 400)
 
         layout = QVBoxLayout(self)
-
         self.orders_table = QTableView()
         layout.addWidget(self.orders_table)
 
         buttons_layout = QHBoxLayout()
-
         self.close_btn = QPushButton("Закрыть")
         buttons_layout.addWidget(self.close_btn)
-
         buttons_layout.addStretch()
-
         self.export_csv_btn = QPushButton("Экспорт CSV")
         buttons_layout.addWidget(self.export_csv_btn)
-
         layout.addLayout(buttons_layout)
 
     def setup_connections(self):
-        """настройка соединений"""
         self.close_btn.clicked.connect(self.close)
         self.export_csv_btn.clicked.connect(self.export_to_csv)
 
     def load_orders(self):
-        """загрузка заказов"""
         orders = self.db_manager.get_order_history()
         model = OrdersTableModel(orders)
         self.orders_table.setModel(model)
         self.orders_table.resizeColumnsToContents()
 
     def export_to_csv(self):
-        """экспорт в CSV"""
         filename, _ = QFileDialog.getSaveFileName(
             self, "Экспорт CSV", "orders.csv", "CSV Files (*.csv)"
         )
@@ -283,121 +465,7 @@ class OrderHistoryDialog(QDialog):
             QMessageBox.information(self, "Успех", "Данные экспортированы")
 
 
-template = '''
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Заказ из ресторана</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            border-bottom: 3px solid #e74c3c;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            color: #e74c3c;
-            margin: 0;
-        }
-        .order-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .dishes-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        .dishes-table th {
-            background: #e74c3c;
-            color: white;
-            padding: 12px;
-            text-align: left;
-        }
-        .dishes-table td {
-            padding: 12px;
-            border-bottom: 1px solid #ddd;
-        }
-        .dishes-table tr:nth-child(even) {
-            background: #f8f9fa;
-        }
-        .total-section {
-            background: #2ecc71;
-            color: white;
-            padding: 20px;
-            border-radius: 5px;
-            text-align: center;
-            margin-top: 20px;
-        }
-        .total-amount {
-            font-size: 24px;
-            font-weight: bold;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 30px;
-            color: #7f8c8d;
-            font-size: 14px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🍝 Ресторан "Чайхана"</h1>
-            <p>Ваш заказ</p>
-        </div>
-
-        <div class="order-info">
-            <h3>Детали заказа</h3>
-            <p><strong>Дата:</strong> {{order_date}}</p>
-            <p><strong>Количество блюд:</strong> {{dishes_count}}</p>
-        </div>
-
-        <table class="dishes-table">
-            <thead>
-                <tr>
-                    <th>Блюдо</th>
-                    <th>Цена</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{dishes_rows}}
-            </tbody>
-        </table>
-
-        <div class="total-section">
-            <h3>Общая сумма заказа:</h3>
-            <div class="total-amount">{{total_amount}} ₽</div>
-        </div>
-
-        <div class="footer">
-            <p>Спасибо за ваш заказ! Приятного аппетита!</p>
-        </div>
-    </div>
-</body>
-</html>
-'''
-
-
 class Ui_MainWindow(object):
-
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(900, 700)
@@ -454,7 +522,6 @@ class Ui_MainWindow(object):
         self.bottomLayout.addWidget(self.confirmButton)
 
         self.verticalLayout.addLayout(self.bottomLayout)
-
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.menubar = QtWidgets.QMenuBar(parent=MainWindow)
@@ -464,16 +531,20 @@ class Ui_MainWindow(object):
         self.menu = QtWidgets.QMenu(parent=self.menubar)
         self.menu.setObjectName("menu")
 
-        self.actionExport = QtGui.QAction(parent=MainWindow)
-        self.actionExport.setObjectName("actionExport")
+        actions = [
+            ("actionExport", "Экспорт заказа"),
+            ("actionViewOrders", "Просмотр заказов"),
+            ("actionAddDish", "Добавить блюдо"),
+            ("actionDeleteDish", "Удалить блюдо")
+        ]
 
-        self.actionViewOrders = QtGui.QAction(parent=MainWindow)
-        self.actionViewOrders.setObjectName("actionViewOrders")
+        for action_name, action_text in actions:
+            action = QtGui.QAction(parent=MainWindow)
+            action.setObjectName(action_name)
+            setattr(self, action_name, action)
+            self.menu.addAction(action)
 
-        self.menu.addAction(self.actionExport)
-        self.menu.addAction(self.actionViewOrders)
         self.menubar.addAction(self.menu.menuAction())
-
         MainWindow.setMenuBar(self.menubar)
 
         self.statusbar = QtWidgets.QStatusBar(parent=MainWindow)
@@ -485,18 +556,18 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Чайхана - Лучший выбор блюд"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Ресторан - Выбор блюд"))
         self.titleLabel.setText(_translate("MainWindow", "Выберите блюда"))
         self.totalGroupBox.setTitle(_translate("MainWindow", "Итого"))
         self.confirmButton.setText(_translate("MainWindow", "Подтвердить заказ"))
         self.menu.setTitle(_translate("MainWindow", "Меню"))
         self.actionExport.setText(_translate("MainWindow", "Экспорт заказа"))
         self.actionViewOrders.setText(_translate("MainWindow", "Просмотр заказов"))
+        self.actionAddDish.setText(_translate("MainWindow", "Добавить блюдо"))
+        self.actionDeleteDish.setText(_translate("MainWindow", "Удалить блюдо"))
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
-    """главное окно приложения"""
-
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -510,15 +581,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.update_total()
 
     def setup_connections(self):
-        """настройка соединений"""
         self.confirmButton.clicked.connect(self.confirm_order)
-        self.actionExport.triggered.connect(self.export_order_html)
+        self.actionExport.triggered.connect(self.export_order_txt)
         self.actionViewOrders.triggered.connect(self.show_order_history)
+        self.actionAddDish.triggered.connect(self.show_add_dish_dialog)
+        self.actionDeleteDish.triggered.connect(self.show_delete_dish_dialog)
 
     def load_dishes(self):
-        """загрузка блюд"""
         self.dishes = self.db_manager.get_all_dishes()
         grid_layout = self.dishesGridLayout
+
+        while grid_layout.count():
+            child = grid_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
         row, col = 0, 0
         for dish in self.dishes:
@@ -530,16 +606,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 row += 1
 
     def update_total(self):
-        """обновление суммы"""
         self.selected_dishes = [dish for dish in self.dishes if dish.selected]
         total = sum(dish.price for dish in self.selected_dishes)
         self.totalLabel.setText(f"{total:.2f} ₽")
-
-        status_text = f"Выбрано {len(self.selected_dishes)} блюд"
-        self.statusbar.showMessage(status_text)
+        self.statusbar.showMessage(f"Выбрано {len(self.selected_dishes)} блюд")
 
     def confirm_order(self):
-        """подтверждение заказа"""
         if not self.selected_dishes:
             QMessageBox.warning(self, "Внимание", "Выберите блюда!")
             return
@@ -548,9 +620,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         order_id = self.db_manager.save_order(self.selected_dishes, total)
 
         QMessageBox.information(
-            self,
-            "Успех",
-            f"Заказ #{order_id} сохранен!\nСумма: {total:.2f} ₽"
+            self, "Успех", f"Заказ #{order_id} сохранен!\nСумма: {total:.2f} ₽"
         )
 
         for dish in self.dishes:
@@ -559,52 +629,95 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.reset_checkboxes()
 
     def reset_checkboxes(self):
-        """сброс чекбоксов"""
         for i in range(self.dishesGridLayout.count()):
             widget = self.dishesGridLayout.itemAt(i).widget()
             if isinstance(widget, DishWidget):
                 widget.checkbox.setChecked(False)
 
-    def export_order_html(self):
-        """экспорт заказа в HTML"""
+    def export_order_txt(self):
         if not self.selected_dishes:
             QMessageBox.warning(self, "Внимание", "Нет выбранных блюд!")
             return
 
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Экспорт HTML", "order.html", "HTML Files (*.html)"
+            self, "Экспорт заказа", "order.txt", "Text Files (*.txt)"
         )
         if filename:
-            try:
-                self.generate_html_file(filename)
-                QMessageBox.information(self, "Успех", "HTML файл создан")
-            except Exception as e:
-                QMessageBox.critical(self, "Ошибка", f"Ошибка: {str(e)}")
-
-    def generate_html_file(self, filename):
-        total = sum(dish.price for dish in self.selected_dishes)
-        current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
-
-        dishes_rows = ""
-        for dish in self.selected_dishes:
-            dishes_rows += f"<tr><td>{dish.name}</td><td>{dish.price:.2f} ₽</td></tr>\n"
-
-        html_content = template.replace("{{order_date}}", current_date)
-        html_content = html_content.replace("{{dishes_count}}", str(len(self.selected_dishes)))
-        html_content = html_content.replace("{{dishes_rows}}", dishes_rows)
-        html_content = html_content.replace("{{total_amount}}", f"{total:.2f}")
-
-        with open(filename, 'w', encoding='utf-8') as file:
-            file.write(html_content)
+            with open(filename, 'w', encoding='utf-8') as file:
+                file.write("ВАШ ЗАКАЗ:\n")
+                file.write("=" * 30 + "\n")
+                for dish in self.selected_dishes:
+                    file.write(f"• {dish.name} - {dish.price:.2f} ₽\n")
+                total = sum(dish.price for dish in self.selected_dishes)
+                file.write("=" * 30 + "\n")
+                file.write(f"ИТОГО: {total:.2f} ₽\n")
+            QMessageBox.information(self, "Успех", "Заказ экспортирован")
 
     def show_order_history(self):
-        """показать историю заказов"""
         dialog = OrderHistoryDialog(self)
         dialog.exec()
 
+    def show_add_dish_dialog(self):
+        dialog = AddDishDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            dish_data = dialog.get_dish_data()
+
+            if not dish_data['name']:
+                QMessageBox.warning(self, "Ошибка", "Введите название блюда!")
+                return
+
+            try:
+                dish_id = self.db_manager.add_new_dish(
+                    dish_data['name'],
+                    dish_data['price'],
+                    dish_data['image_path']
+                )
+
+                QMessageBox.information(
+                    self, "Успех",
+                    f"Блюдо '{dish_data['name']}' добавлено!\nID: {dish_id}"
+                )
+                self.load_dishes()
+
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Ошибка", f"Не удалось добавить блюдо:\n{str(e)}"
+                )
+
+    def show_delete_dish_dialog(self):
+        if not self.dishes:
+            QMessageBox.information(self, "Информация", "Нет блюд для удаления")
+            return
+
+        dialog = DeleteDishDialog(self.dishes, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            dish_id = dialog.get_selected_dish_id()
+            if dish_id:
+                self.delete_dish(dish_id)
+
+    def delete_dish(self, dish_id):
+        dish_to_delete = next((d for d in self.dishes if d.id == dish_id), None)
+        if not dish_to_delete:
+            return
+
+        reply = QMessageBox.question(
+            self, "Подтверждение удаления",
+            f"Вы уверены, что хотите удалить блюдо '{dish_to_delete.name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self.db_manager.delete_dish(dish_id)
+                QMessageBox.information(self, "Успех", "Блюдо удалено!")
+                self.load_dishes()
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Ошибка", f"Не удалось удалить блюдо:\n{str(e)}"
+                )
+
 
 def main():
-    """главная функция"""
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
