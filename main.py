@@ -62,7 +62,7 @@ class DatabaseManager:
                 ("Пицца Маргарита", 15.50, "images/pizza.jpg"),
                 ("Салат Цезарь", 8.75, "images/salad.jpg"),
                 ("Стейк Рибай", 25.99, "images/steak.jpg"),
-                ("Суши Калифорния", 18.25, "images/sushi.jpg"),
+                ("Суши Калифорния", 19.25, "images/sushi.jpg"),
                 ("Борщ", 7.50, "images/borscht.jpg"),
                 ("Пельмени", 10.25, "images/dumplings.jpg")
             ]
